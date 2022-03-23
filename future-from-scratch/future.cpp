@@ -19,6 +19,16 @@ template <typename T>
 class Future
 {
 public:
+
+    Future(std::shared_ptr<SharedState<T>> state)
+        : _state(state)
+    {}
+    Future(const Future&) = delete;
+    Future(Future&& other) noexcept
+        : _state(other._state)
+    {}
+    ~Future(){}
+
     void wait() const 
     {
         if(!_state) throw "No State!\n";
@@ -39,7 +49,7 @@ public:
 
     bool valid() const 
     {
-        return (state != nullptr);
+        return (_state != nullptr);
     }
 
     bool ready() const 
@@ -59,14 +69,18 @@ template <typename T>
 class Promise
 {
 public:
-    Promise() = default;
+    Promise()
+        : _state(std::make_shared<SharedState<T>>())
+    {
+    };
+
     ~Promise(){}
 
     void set_value(T value)
     {
-        if (false == _state) throw "No State!\n";
-        std::lock_guard<std::mutex> lck(_state->mtx);
-        if (true == _state->ready) throw "Promise already satisfied!\n";
+        if (!_state) throw "No State!\n";
+        std::lock_guard<std::mutex> lck(_state->_mtx);
+        if (true == _state->_ready) throw "Promise already satisfied!\n";
         _state->_value = std::move(value);
         _state->_ready = true;
         _state->_cv.notify_all();
@@ -74,17 +88,17 @@ public:
 
     void set_exception(std::exception_ptr e)
     {
-        if (false == _state) throw "No State!\n";
-        std::lock_guard<std::mutex> lck(_state->mtx);
-        if (true == _state->ready) throw "Promise already satisfied!\n";
+        if (!_state) throw "No State!\n";
+        std::lock_guard<std::mutex> lck(_state->_mtx);
+        if (true == _state->_ready) throw "Promise already satisfied!\n";
         _state->_exception = std::move(e);
         _state->_ready = true;
         _state->_cv.notify_all();
     }
 
-    Future<T> get_future() 
+    Future<T> get_future()
     {
-        if (false == _state) throw "No State!\n";
+        if (_state == nullptr) std::cout << "No State!\n";
         if (true == future_retreived) throw "Future already retrived!\n";
         future_retreived = true;
         return Future<T>(_state);
@@ -95,6 +109,18 @@ private:
 };
 
 
+int foo()
+{
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    return 1;
+}
+
 int main() 
 {
+    Promise<int> p;
+    Future<int> res = p.get_future();
+
+    p.set_value(foo());
+
+    std::cout << "result: " << res.get() << "\n";
 }
